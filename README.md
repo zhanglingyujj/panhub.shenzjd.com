@@ -20,7 +20,7 @@
 
 ## 一键部署到 Vercel
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fwu529778790%2Fpanhub.shenzjd.com&project-name=panhub&repository-name=panhub.shenzjd.com)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fzhanglingyujj%2Fpanhub.shenzjd.com&project-name=panhub&repository-name=panhub.shenzjd.com)
 
 ---
 
