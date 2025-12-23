@@ -46,6 +46,7 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     // server-only 配置
+    priorityChannels: channelsConfig.priorityChannels,
     defaultChannels: channelsConfig.defaultChannels,
     defaultConcurrency: channelsConfig.defaultConcurrency,
     pluginTimeoutMs: channelsConfig.pluginTimeoutMs,

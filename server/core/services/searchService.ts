@@ -1,5 +1,7 @@
+import pLimit from "p-limit";
 import { MemoryCache } from "../cache/memoryCache";
 import { createLogger } from "../utils/logger";
+import { safeExecute, fetchWithRetry } from "../utils/fetch";
 import type {
   MergedLinks,
   SearchRequest,
@@ -11,6 +13,7 @@ import { PluginManager, type AsyncSearchPlugin } from "../plugins/manager";
 const logger = createLogger("searchService");
 
 export interface SearchServiceOptions {
+  priorityChannels: string[];
   defaultChannels: string[];
   defaultConcurrency: number;
   pluginTimeoutMs: number;
@@ -31,6 +34,7 @@ export class SearchService {
       plugins: pluginManager.getPlugins().length,
       cacheEnabled: options.cacheEnabled,
       defaultConcurrency: options.defaultConcurrency,
+      priorityChannels: options.priorityChannels?.length || 0,
     });
   }
 
@@ -158,21 +162,29 @@ export class SearchService {
     concurrencyOverride?: number,
     ext?: Record<string, any>
   ): Promise<SearchResult[]> {
+    const startTime = Date.now();
     const chList = Array.isArray(channels) ? channels : [];
     const cacheKey = `tg:${keyword}:${[...chList].sort().join(",")}`;
-    const { cacheEnabled, cacheTtlMinutes } = this.options;
+    const { cacheEnabled, cacheTtlMinutes, priorityChannels } = this.options;
 
+    // 缓存检查
     if (!forceRefresh && cacheEnabled) {
       const cached = this.tgCache.get(cacheKey);
       if (cached.hit && cached.value) {
-        logger.debug("TG cache hit", { keyword, channels: chList.length });
+        const cacheTime = Date.now() - startTime;
+        logger.info("TG cache hit", {
+          keyword,
+          channels: chList.length,
+          results: cached.value.length,
+          timeMs: cacheTime
+        });
         return cached.value;
       }
     }
 
     logger.debug("TG search started", { keyword, channels: chList.length });
 
-    // 控制并发抓取频道公开页并解析（避免一次性打满连接被限流）
+    // 获取配置
     const { fetchTgChannelPosts } = await import("./tg");
     const perChannelLimit = 30;
     const requestedTimeout = Number((ext as any)?.__plugin_timeout_ms) || 0;
@@ -182,41 +194,133 @@ export class SearchService {
         ? requestedTimeout
         : this.options.pluginTimeoutMs || 0
     );
-    const runnerTasks = chList.map(
-      (ch) => async () =>
-        this.withTimeout<SearchResult[]>(
-          fetchTgChannelPosts(ch, keyword, {
-            limitPerChannel: perChannelLimit,
-          }),
-          timeoutMs,
-          []
-        )
-    );
     const concurrency = Math.max(
       2,
       Math.min(concurrencyOverride ?? this.options.defaultConcurrency, 12)
     );
-    let resultsByChannel: SearchResult[][] = [];
-    try {
-      resultsByChannel = await this.runWithConcurrency(
-        runnerTasks,
-        concurrency
+
+    // 分批策略：优先频道 + 普通频道
+    const prioritySet = new Set(priorityChannels || []);
+    const priorityList = chList.filter((ch) => prioritySet.has(ch));
+    const normalList = chList.filter((ch) => !prioritySet.has(ch));
+
+    // 辅助函数：创建频道搜索任务（带性能监控）
+    const createChannelTask = (channel: string) => async () => {
+      const channelStart = Date.now();
+      const result = await safeExecute(
+        () =>
+          this.withTimeout<SearchResult[]>(
+            fetchTgChannelPosts(channel, keyword, {
+              limitPerChannel: perChannelLimit,
+            }),
+            timeoutMs,
+            []
+          ),
+        [],
+        logger.child(`tg:${channel}`)
       );
-    } catch (error) {
-      logger.error("TG search failed", error);
-      return [];
-    }
-    const results: SearchResult[] = [];
-    for (const arr of resultsByChannel) {
-      if (Array.isArray(arr)) results.push(...(arr as SearchResult[]));
+      const channelTime = Date.now() - channelStart;
+      logger.debug("TG channel completed", {
+        channel,
+        keyword,
+        results: result.length,
+        timeMs: channelTime,
+      });
+      return result;
+    };
+
+    // 性能监控
+    const metrics = {
+      priorityCount: priorityList.length,
+      normalCount: normalList.length,
+      priorityTime: 0,
+      normalTime: 0,
+      priorityResults: 0,
+      normalResults: 0,
+    };
+
+    // 第一批：优先频道（使用更高并发）
+    let results: SearchResult[] = [];
+    if (priorityList.length > 0) {
+      const priorityStart = Date.now();
+      logger.debug("TG search - priority batch", {
+        keyword,
+        priorityChannels: priorityList.length,
+        concurrency: Math.min(concurrency * 2, 12),
+      });
+
+      const priorityConcurrency = Math.min(concurrency * 2, 12); // 优先频道使用双倍并发
+      const priorityTasks = priorityList.map(createChannelTask);
+      const priorityResults = await this.runWithConcurrency(
+        priorityTasks,
+        priorityConcurrency
+      );
+
+      for (const arr of priorityResults) {
+        if (Array.isArray(arr)) {
+          results.push(...arr);
+          metrics.priorityResults += arr.length;
+        }
+      }
+      metrics.priorityTime = Date.now() - priorityStart;
+
+      logger.info("TG search - priority batch completed", {
+        keyword,
+        results: metrics.priorityResults,
+        timeMs: metrics.priorityTime,
+      });
     }
 
+    // 如果优先频道已有结果，继续抓取普通频道
+    if (normalList.length > 0) {
+      const normalStart = Date.now();
+      logger.debug("TG search - normal batch", {
+        keyword,
+        normalChannels: normalList.length,
+        concurrency,
+      });
+
+      const normalTasks = normalList.map(createChannelTask);
+      const normalResults = await this.runWithConcurrency(
+        normalTasks,
+        concurrency
+      );
+
+      for (const arr of normalResults) {
+        if (Array.isArray(arr)) {
+          results.push(...arr);
+          metrics.normalResults += arr.length;
+        }
+      }
+      metrics.normalTime = Date.now() - normalStart;
+
+      logger.info("TG search - normal batch completed", {
+        keyword,
+        results: metrics.normalResults,
+        timeMs: metrics.normalTime,
+      });
+    }
+
+    // 缓存结果
     if (cacheEnabled && results.length > 0) {
       this.tgCache.set(cacheKey, results, cacheTtlMinutes * 60_000);
       logger.debug("TG cache stored", { keyword, results: results.length });
     }
 
-    logger.debug("TG search completed", { keyword, results: results.length });
+    const totalTime = Date.now() - startTime;
+    logger.info("TG search completed", {
+      keyword,
+      totalResults: results.length,
+      totalTimeMs: totalTime,
+      priorityChannels: metrics.priorityCount,
+      normalChannels: metrics.normalCount,
+      priorityTimeMs: metrics.priorityTime,
+      normalTimeMs: metrics.normalTime,
+      priorityResults: metrics.priorityResults,
+      normalResults: metrics.normalResults,
+      cacheHit: false,
+    });
+
     return results;
   }
 
@@ -260,42 +364,61 @@ export class SearchService {
         ? requestedTimeout
         : this.options.pluginTimeoutMs || 0
     );
-    const tasks = available.map((p) => async () => {
+
+    // 使用 safeExecuteAll 统一处理错误，避免单个插件失败影响整体
+    const pluginPromises = available.map((p) => async () => {
       p.setMainCacheKey(cacheKey);
       p.setCurrentKeyword(keyword);
-      try {
-        let results = await this.withTimeout<SearchResult[]>(
-          p.search(keyword, ext),
-          timeoutMs,
-          []
-        );
-        // 当关键词过短（如 "1"）且无结果时，尝试通用兜底词以验证插件可用性
-        if (
-          (!results || results.length === 0) &&
-          (keyword || "").trim().length <= 1
-        ) {
-          const fallbacks = ["电影", "movie", "1080p"];
-          for (const fb of fallbacks) {
-            results = await this.withTimeout<SearchResult[]>(
-              p.search(fb, ext),
-              timeoutMs,
-              []
-            );
-            if (results && results.length > 0) break;
+
+      // 主搜索
+      let results = await this.withTimeout<SearchResult[]>(
+        p.search(keyword, ext),
+        timeoutMs,
+        []
+      );
+
+      // 短关键词兜底逻辑
+      if (
+        (!results || results.length === 0) &&
+        (keyword || "").trim().length <= 1
+      ) {
+        const fallbacks = ["电影", "movie", "1080p"];
+        for (const fb of fallbacks) {
+          const fallbackResults = await this.withTimeout<SearchResult[]>(
+            p.search(fb, ext),
+            timeoutMs,
+            []
+          );
+          if (fallbackResults && fallbackResults.length > 0) {
+            results = fallbackResults;
+            break;
           }
         }
-        return results || [];
-      } catch (error) {
-        logger.warn(`Plugin ${p.name()} failed`, error);
-        return [] as SearchResult[];
       }
+
+      return results || [];
     });
 
-    const resultsByPlugin = await this.runWithConcurrency(tasks, concurrency);
-    const merged: SearchResult[] = [];
-    for (const arr of resultsByPlugin) merged.push(...arr);
+    // 使用并发控制执行，同时利用 safeExecuteAll 提供统一错误处理
+    const resultsByPlugin = await this.runWithConcurrency(
+      pluginPromises.map((promiseFactory) => async () => {
+        return await safeExecute(
+          promiseFactory,
+          [],
+          logger.child(`plugin:${promiseFactory.name || "unknown"}`)
+        );
+      }),
+      concurrency
+    );
 
-    if (cacheEnabled) {
+    const merged: SearchResult[] = [];
+    for (const arr of resultsByPlugin) {
+      if (Array.isArray(arr)) {
+        merged.push(...arr);
+      }
+    }
+
+    if (cacheEnabled && merged.length > 0) {
       this.pluginCache.set(cacheKey, merged, cacheTtlMinutes * 60_000);
       logger.debug("Plugin cache stored", { keyword, results: merged.length });
     }
@@ -386,34 +509,8 @@ export class SearchService {
     tasks: Array<() => Promise<T>>,
     limit: number
   ): Promise<T[]> {
-    const queue = tasks.slice();
-    const results: T[] = [];
-    let running: Promise<void>[] = [];
-
-    const runNext = async () => {
-      const task = queue.shift();
-      if (!task) return;
-      const p = task()
-        .then((res) => {
-          results.push(res);
-        })
-        .catch(() => {
-          /* swallow */
-        });
-      const wrapped = p.then(() => {
-        /* slot freed */
-      });
-      running.push(wrapped);
-      if (running.length >= limit) {
-        await Promise.race(running);
-        running = running.filter((r) => r !== wrapped);
-      }
-      await runNext();
-    };
-
-    const starters = Math.min(limit, queue.length);
-    await Promise.all(Array.from({ length: starters }, () => runNext()));
-    await Promise.all(running);
-    return results;
+    const limitFn = pLimit(limit);
+    const limitedTasks = tasks.map((task) => limitFn(task));
+    return Promise.all(limitedTasks);
   }
 }

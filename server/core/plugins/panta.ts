@@ -2,6 +2,10 @@ import { BaseAsyncPlugin, registerGlobalPlugin } from "./manager";
 import type { SearchResult } from "../types/models";
 import { ofetch } from "ofetch";
 import { load } from "cheerio";
+import { fetchWithRetry } from "../utils/fetch";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("panta");
 
 const SEARCH_URL = (kw: string) =>
   `https://www.91panta.cn/search?keyword=${encodeURIComponent(kw)}`;
@@ -30,13 +34,20 @@ export class PantaPlugin extends BaseAsyncPlugin {
     super("panta", 1);
   }
   override async search(keyword: string): Promise<SearchResult[]> {
-    const html = await ofetch<string>(SEARCH_URL(keyword), {
-      headers: {
-        "user-agent": "Mozilla/5.0",
-        referer: "https://www.91panta.cn/index",
+    const html = await fetchWithRetry<string>(
+      SEARCH_URL(keyword),
+      {
+        headers: {
+          "user-agent": "Mozilla/5.0",
+          referer: "https://www.91panta.cn/index",
+        },
       },
-      timeout: 8000,
-    }).catch(() => "");
+      {
+        maxRetries: 2,
+        timeout: 8000,
+        logWarnings: false,
+      }
+    ).catch(() => "");
     if (!html) return [];
     const $ = load(html);
     const results: SearchResult[] = [];
@@ -54,28 +65,32 @@ export class PantaPlugin extends BaseAsyncPlugin {
         const timeText = s.find("span.postTime").text();
         const dtMatch = timeText.match(/发表时间：(.+)/);
         const datetime = dtMatch ? new Date(dtMatch[1]).toISOString() : "";
-        // 抓详情
-        let links: SearchResult["links"] = [];
-        try {
-          const detail = await ofetch<string>(
-            `https://www.91panta.cn/thread?topicId=${topicId}`,
-            {
-              headers: {
-                "user-agent": "Mozilla/5.0",
-                referer: "https://www.91panta.cn/index",
-              },
-              timeout: 8000,
-            }
-          );
-          const $$ = load(detail);
-          const found = new Set<string>();
-          $$('.topicContent a[href^="http"]').each((_, a2) => {
-            const u = $$(a2).attr("href") || "";
-            if (!u || found.has(u)) return;
-            found.add(u);
-            links.push({ type: determineLinkType(u), url: u, password: "" });
-          });
-        } catch {}
+        // 抓详情 - 使用 fetchWithRetry 和并行处理
+        const detailUrl = `https://www.91panta.cn/thread?topicId=${topicId}`;
+        const detail = await fetchWithRetry<string>(
+          detailUrl,
+          {
+            headers: {
+              "user-agent": "Mozilla/5.0",
+              referer: "https://www.91panta.cn/index",
+            },
+          },
+          {
+            maxRetries: 2,
+            timeout: 8000,
+            logWarnings: false,
+          }
+        ).catch(() => "");
+        if (!detail) return;
+        const $$ = load(detail);
+        const found = new Set<string>();
+        const links: SearchResult["links"] = [];
+        $$('.topicContent a[href^="http"]').each((_, a2) => {
+          const u = $$(a2).attr("href") || "";
+          if (!u || found.has(u)) return;
+          found.add(u);
+          links.push({ type: determineLinkType(u), url: u, password: "" });
+        });
         if (links.length) {
           results.push({
             message_id: "",

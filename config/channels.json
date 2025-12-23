@@ -1,4 +1,14 @@
 {
+  "priorityChannels": [
+    "tgsearchers3",
+    "share_aliyun",
+    "Quark_Movies",
+    "NewQuark",
+    "alyp_4K_Movies",
+    "yunpanqk",
+    "BaiduCloudDisk",
+    "tianyifc"
+  ],
   "defaultChannels": [
     "tgsearchers3",
     "yunpanxunlei",

@@ -22,15 +22,23 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
     "test:api": "node ./test/api.test.mjs",
+    "test:coverage": "vitest run --coverage",
     "deploy:cf": "wrangler deploy"
   },
   "dependencies": {
+    "cheerio": "^1.0.0",
     "nuxt": "^4.0.3",
-    "vue": "^3.5.18",
-    "vue-router": "^4.5.1",
     "ofetch": "^1.4.1",
-    "cheerio": "^1.0.0"
+    "p-limit": "^7.2.0",
+    "vue": "^3.5.18",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.0",
+    "vitest": "^2.1.9"
   },
   "license": "MIT",
   "keywords": [

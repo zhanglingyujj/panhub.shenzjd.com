@@ -1,6 +1,9 @@
 import { BaseAsyncPlugin, registerGlobalPlugin } from "./manager";
 import type { SearchResult } from "../types/models";
-import { ofetch } from "ofetch";
+import { fetchWithRetry } from "../utils/fetch";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("pansearch");
 
 // 轻量版：直接请求 pansearch 的 _next data 接口
 
@@ -21,10 +24,17 @@ export class PansearchPlugin extends BaseAsyncPlugin {
     const url = `${DATA(buildId)}?keyword=${encodeURIComponent(
       keyword
     )}&offset=0`;
-    const resp = await ofetch<Resp>(url, {
-      headers: { "user-agent": "Mozilla/5.0" },
-      timeout: 8000,
-    }).catch(() => undefined);
+    const resp = await fetchWithRetry<Resp>(
+      url,
+      {
+        headers: { "user-agent": "Mozilla/5.0" },
+      },
+      {
+        maxRetries: 2,
+        timeout: 8000,
+        logWarnings: false,
+      }
+    ).catch(() => undefined);
     const items = resp?.pageProps?.data?.data || [];
     const out: SearchResult[] = [];
     for (const it of items) {
@@ -47,10 +57,17 @@ export class PansearchPlugin extends BaseAsyncPlugin {
 }
 
 async function getBuildId(): Promise<string> {
-  const html = await ofetch<string>(WEBSITE, {
-    headers: { "user-agent": "Mozilla/5.0" },
-    timeout: 8000,
-  });
+  const html = await fetchWithRetry<string>(
+    WEBSITE,
+    {
+      headers: { "user-agent": "Mozilla/5.0" },
+    },
+    {
+      maxRetries: 2,
+      timeout: 8000,
+      logWarnings: false,
+    }
+  );
   const m = /"buildId":"([^"]+)"/.exec(html);
   if (m) return m[1];
   const m2 =

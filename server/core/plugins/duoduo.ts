@@ -2,6 +2,10 @@ import { BaseAsyncPlugin, registerGlobalPlugin } from "./manager";
 import type { SearchResult } from "../types/models";
 import { ofetch } from "ofetch";
 import { load } from "cheerio";
+import { fetchWithRetry } from "../utils/fetch";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("duoduo");
 
 const BASE = "https://tv.yydsys.top";
 const SEARCH = (kw: string) =>
@@ -42,17 +46,21 @@ function collectLinks(html: string): SearchResult["links"] {
 }
 
 async function fetchDetail(url: string) {
-  try {
-    const html = await ofetch<string>(url, {
+  const html = await fetchWithRetry<string>(
+    url,
+    {
       headers: { "user-agent": "Mozilla/5.0", referer: BASE + "/" },
+    },
+    {
+      maxRetries: 2,
       timeout: 10000,
-    });
-    const $ = load(html);
-    const text = $("#download-list").html() || $("body").html() || "";
-    return collectLinks(text);
-  } catch {
-    return [];
-  }
+      logWarnings: false,
+    }
+  ).catch(() => "");
+  if (!html) return [];
+  const $ = load(html);
+  const text = $("#download-list").html() || $("body").html() || "";
+  return collectLinks(text);
 }
 
 export class DuoduoPlugin extends BaseAsyncPlugin {
@@ -60,10 +68,17 @@ export class DuoduoPlugin extends BaseAsyncPlugin {
     super("duoduo", 2);
   }
   override async search(keyword: string): Promise<SearchResult[]> {
-    const html = await ofetch<string>(SEARCH(keyword), {
-      headers: { "user-agent": "Mozilla/5.0", referer: BASE + "/" },
-      timeout: 10000,
-    }).catch(() => "");
+    const html = await fetchWithRetry<string>(
+      SEARCH(keyword),
+      {
+        headers: { "user-agent": "Mozilla/5.0", referer: BASE + "/" },
+      },
+      {
+        maxRetries: 2,
+        timeout: 10000,
+        logWarnings: false,
+      }
+    ).catch(() => "");
     if (!html) return [];
     const $ = load(html);
     const out: SearchResult[] = [];
@@ -92,6 +107,7 @@ export class DuoduoPlugin extends BaseAsyncPlugin {
         })()
       );
     });
+    // 使用 Promise.allSettled 并行获取所有详情
     await Promise.allSettled(tasks);
     return out;
   }

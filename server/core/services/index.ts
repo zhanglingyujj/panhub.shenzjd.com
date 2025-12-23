@@ -30,6 +30,7 @@ let singleton: SearchService | undefined;
 export function getOrCreateSearchService(runtimeConfig: any): SearchService {
   if (singleton) return singleton;
   const options: SearchServiceOptions = {
+    priorityChannels: runtimeConfig.priorityChannels || [],
     defaultChannels: runtimeConfig.defaultChannels || [],
     defaultConcurrency: runtimeConfig.defaultConcurrency || 10,
     pluginTimeoutMs: runtimeConfig.pluginTimeoutMs || 15000,
