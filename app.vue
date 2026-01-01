@@ -1,17 +1,36 @@
 <template>
   <div class="layout">
+    <!-- 背景装饰 -->
+    <div class="bg-decoration">
+      <div class="blob blob-1"></div>
+      <div class="blob blob-2"></div>
+      <div class="blob blob-3"></div>
+    </div>
+
+    <!-- 顶部导航 -->
     <header class="header">
       <nav class="nav">
-        <NuxtLink to="/" class="brand">PanHub</NuxtLink>
-        <div class="spacer" />
-        <button class="link" type="button" @click="openSettings = true">
-          设置
-        </button>
+        <NuxtLink to="/" class="brand">
+          <span class="brand-icon">🔍</span>
+          <span class="brand-text">PanHub</span>
+        </NuxtLink>
+        <div class="nav-actions">
+          <button class="btn-icon" type="button" @click="openSettings = true" title="设置">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24M6.34 6.34L2.1 2.1m17.8 17.8l-4.24-4.24M6.34 17.66L2.1 21.9"></path>
+            </svg>
+          </button>
+        </div>
       </nav>
     </header>
+
+    <!-- 主内容区 -->
     <main class="main">
       <NuxtPage />
     </main>
+
+    <!-- 设置抽屉 -->
     <ClientOnly>
       <SettingsDrawer
         v-model="settings"
@@ -21,6 +40,11 @@
         @save="saveSettings"
         @reset-default="resetToDefault" />
     </ClientOnly>
+
+    <!-- Toast 通知 -->
+    <div v-if="toast.show" class="toast" :class="toast.type">
+      {{ toast.message }}
+    </div>
   </div>
 </template>
 
@@ -32,6 +56,21 @@ import channelsConfig from "~/config/channels.json";
 const { settings, loadSettings, saveSettings, resetToDefault } = useSettings();
 const openSettings = ref(false);
 
+// Toast 状态
+const toast = ref({
+  show: false,
+  message: "",
+  type: "info" as "info" | "success" | "error",
+});
+
+// 显示 Toast
+function showToast(message: string, type: "info" | "success" | "error" = "info") {
+  toast.value = { show: true, message, type };
+  setTimeout(() => {
+    toast.value.show = false;
+  }, 3000);
+}
+
 // 所有可用的 TG 频道（用于设置面板）
 const allTgChannels = computed(() => {
   const configChannels = (useRuntimeConfig().public as any)?.tgDefaultChannels;
@@ -40,42 +79,119 @@ const allTgChannels = computed(() => {
     : channelsConfig.defaultChannels;
 });
 
+// 监听设置保存事件，显示提示
+watch(() => settings.value, (newVal, oldVal) => {
+  if (oldVal && newVal && JSON.stringify(newVal) !== JSON.stringify(oldVal)) {
+    showToast("设置已保存", "success");
+  }
+}, { deep: true });
+
 onMounted(() => {
   loadSettings();
 });
+
+// 暴露给子组件使用
+provide('showToast', showToast);
 </script>
 
 <style>
+/* 全局样式重置和现代化设计系统 */
+:root {
+  --primary: #6366f1;
+  --primary-dark: #4f46e5;
+  --secondary: #8b5cf6;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-glass: rgba(255, 255, 255, 0.7);
+
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --text-tertiary: #94a3b8;
+
+  --border-light: #e2e8f0;
+  --border-medium: #cbd5e1;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow: 350ms ease;
+}
+
+/* 基础重置 */
+* {
+  box-sizing: border-box;
+}
+
 html,
 body {
   margin: 0;
   padding: 0;
-  /* iOS Safari兼容性：防止页面缩放 */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+  color: var(--text-primary);
+
+  /* iOS Safari兼容性 */
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
-  /* iOS Safari兼容性：改善滚动体验 */
   -webkit-overflow-scrolling: touch;
 }
 
-/* iOS Safari兼容性：防止输入框自动缩放 */
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* 输入框基础样式 */
 input[type="text"],
 input[type="search"],
 input[type="email"],
 input[type="password"],
-textarea {
+input[type="number"],
+textarea,
+select {
   -webkit-appearance: none;
   -webkit-border-radius: 0;
   border-radius: 0;
   -webkit-text-size-adjust: 100%;
+  font-family: inherit;
 }
 
-/* iOS Safari兼容性：防止按钮出现默认样式 */
+/* 按钮基础样式 */
 button {
   -webkit-appearance: none;
   -webkit-tap-highlight-color: transparent;
+  font-family: inherit;
+  cursor: pointer;
 }
 
-/* iOS Safari兼容性：确保触摸区域足够大 */
+/* iOS Safari触摸区域优化 */
 @media (max-width: 640px) {
   button,
   input,
@@ -85,49 +201,314 @@ button {
     min-width: 44px;
   }
 }
+
+/* 动画定义 */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes blobFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
 </style>
 
 <style scoped>
+/* 主布局 */
 .layout {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  position: relative;
+  overflow-x: hidden;
 }
+
+/* 背景装饰 - 玻璃拟态效果 */
+.bg-decoration {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+}
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.4;
+  animation: blobFloat 8s ease-in-out infinite;
+}
+
+.blob-1 {
+  width: 400px;
+  height: 400px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  top: -100px;
+  left: -100px;
+  animation-delay: 0s;
+}
+
+.blob-2 {
+  width: 300px;
+  height: 300px;
+  background: linear-gradient(135deg, #ec4899, #f43f5e);
+  bottom: -50px;
+  right: -50px;
+  animation-delay: 2s;
+}
+
+.blob-3 {
+  width: 250px;
+  height: 250px;
+  background: linear-gradient(135deg, #10b981, #06b6d4);
+  top: 50%;
+  left: 70%;
+  animation-delay: 4s;
+}
+
+/* 顶部导航 - 玻璃拟态 */
 .header {
-  /* 顶部不再吸顶，改由结果区域的 Tab 吸顶 */
-  background: #fff;
-  border-bottom: 1px solid #eee;
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: var(--shadow-sm);
 }
+
 .nav {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 12px 16px;
+  padding: 16px 24px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 16px;
 }
+
+/* 品牌标识 */
 .brand {
-  font-weight: 800;
-  color: #111;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   text-decoration: none;
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 20px;
+  transition: transform var(--transition-fast);
 }
-.spacer {
-  flex: 1;
+
+.brand:hover {
+  transform: scale(1.05);
 }
-.link {
-  border: 1px solid #eee;
-  color: #333;
-  text-decoration: none;
-  padding: 6px 10px;
-  border-radius: 8px;
-  cursor: pointer;
+
+.brand-icon {
+  font-size: 24px;
+  filter: drop-shadow(0 2px 4px rgba(99, 102, 241, 0.3));
 }
-.link:hover {
-  background: #f6f7f9;
+
+.brand-text {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
+
+/* 导航操作区 */
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 图标按钮 */
+.btn-icon {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.btn-icon:hover {
+  background: rgba(255, 255, 255, 0.8);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-icon:active {
+  transform: translateY(0);
+}
+
+.btn-icon svg {
+  stroke: currentColor;
+}
+
+/* 主内容区 */
 .main {
   flex: 1;
-  /* 初始不出现滚动条，给页脚状态预留 16px 内边距 */
-  padding-bottom: 16px;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+  animation: fadeIn 0.5s ease;
+}
+
+/* Toast 通知 */
+.toast {
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--border-light);
+  font-weight: 500;
+  z-index: 1000;
+  animation: slideInRight 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toast::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.toast.info {
+  color: var(--primary);
+  border-left: 4px solid var(--primary);
+}
+
+.toast.success {
+  color: var(--success);
+  border-left: 4px solid var(--success);
+}
+
+.toast.error {
+  color: var(--error);
+  border-left: 4px solid var(--error);
+}
+
+/* 移动端优化 */
+@media (max-width: 640px) {
+  .nav {
+    padding: 12px 16px;
+  }
+
+  .main {
+    padding: 16px;
+  }
+
+  .brand {
+    font-size: 18px;
+  }
+
+  .btn-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .toast {
+    right: 16px;
+    left: 16px;
+    top: 70px;
+  }
+
+  .blob {
+    filter: blur(40px);
+  }
+}
+
+/* 深色模式支持 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-glass: rgba(15, 23, 42, 0.7);
+    --text-primary: #f1f5f9;
+    --text-secondary: #cbd5e1;
+    --text-tertiary: #64748b;
+    --border-light: #334155;
+    --border-medium: #475569;
+  }
+
+  body {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+  }
+
+  .header {
+    background: rgba(15, 23, 42, 0.7);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .btn-icon {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+  }
+
+  .btn-icon:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  .toast {
+    background: var(--bg-secondary);
+    border-color: var(--border-light);
+  }
+}
+
+/* 高对比度模式支持 */
+@media (prefers-contrast: high) {
+  .btn-icon {
+    border-width: 2px;
+  }
+
+  .brand-text {
+    -webkit-text-fill-color: var(--text-primary);
+    color: var(--text-primary);
+  }
+}
+
+/* 减少动画模式支持 */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .blob {
+    animation: none;
+  }
 }
 </style>

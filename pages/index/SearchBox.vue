@@ -1,45 +1,68 @@
 <template>
   <section class="search">
-    <div class="search__box" :class="{ focused: isFocused }">
-      <span class="search__icon">🔎</span>
-      <input
-        ref="inputEl"
-        :value="modelValue"
-        :placeholder="placeholder"
-        autofocus
-        autocomplete="off"
-        autocorrect="off"
-        autocapitalize="off"
-        spellcheck="false"
-        @input="
-          $emit('update:modelValue', ($event.target as HTMLInputElement).value)
-        "
-        @focus="isFocused = true"
-        @blur="isFocused = false"
-        @keyup.enter="handleSearch"
-        @touchstart="handleTouchStart"
-        @touchend="handleTouchEnd" />
-      <button
-        v-if="modelValue"
-        class="btn btn--ghost"
-        type="button"
-        @click="
-          $emit('update:modelValue', '');
-          $emit('reset');
-        "
-        @touchstart="handleTouchStart"
-        @touchend="handleTouchEnd">
-        重置
-      </button>
-      <button
-        class="btn btn--primary"
-        type="button"
-        :disabled="!modelValue || loading"
-        @click="handleSearch"
-        @touchstart="handleTouchStart"
-        @touchend="handleTouchEnd">
-        {{ loading ? "搜索中…" : "搜索" }}
-      </button>
+    <div class="search-container">
+      <div class="search-box" :class="{ focused: isFocused, loading: loading }">
+        <div class="search-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.35-4.35"></path>
+          </svg>
+        </div>
+
+        <input
+          ref="inputEl"
+          :value="modelValue"
+          :placeholder="placeholder"
+          autofocus
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+          class="search-input"
+          @input="
+            $emit('update:modelValue', ($event.target as HTMLInputElement).value)
+          "
+          @focus="isFocused = true"
+          @blur="isFocused = false"
+          @keyup.enter="handleSearch"
+          @touchstart="handleTouchStart"
+          @touchend="handleTouchEnd" />
+
+        <div class="search-actions">
+          <button
+            v-if="modelValue && !loading"
+            class="action-btn ghost"
+            type="button"
+            @click="
+              $emit('update:modelValue', '');
+              $emit('reset');
+            "
+            @touchstart="handleTouchStart"
+            @touchend="handleTouchEnd"
+            title="清空">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+
+          <div v-if="loading" class="loading-spinner"></div>
+
+          <button
+            v-else
+            class="action-btn primary"
+            type="button"
+            :disabled="!modelValue"
+            @click="handleSearch"
+            @touchstart="handleTouchStart"
+            @touchend="handleTouchEnd">
+            <span class="btn-text">搜索</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12h14M12 5l7 7-7 7"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -99,131 +122,342 @@ onMounted(() => {
 
 <style scoped>
 .search {
-  margin-top: 16px;
+  width: 100%;
 }
-.search__box {
+
+.search-container {
+  width: 100%;
+}
+
+/* 搜索框主体 - 玻璃拟态设计 */
+.search-box {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.04);
-  /* iOS Safari兼容性：防止缩放 */
-  -webkit-text-size-adjust: 100%;
-  -webkit-tap-highlight-color: transparent;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  transition: all var(--transition-normal);
+  position: relative;
+  overflow: hidden;
 }
-.search__box.focused {
-  box-shadow: 0 10px 30px rgba(38, 132, 255, 0.12);
+
+.search-box::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  opacity: 0;
+  transition: opacity var(--transition-normal);
 }
-.search__icon {
-  opacity: 0.6;
-  /* iOS Safari兼容性：防止图标被缩放 */
-  -webkit-user-select: none;
-  user-select: none;
+
+.search-box.focused {
+  border-color: var(--primary);
+  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.25);
+  transform: translateY(-1px);
 }
-.search__box input {
+
+.search-box.focused::before {
+  opacity: 1;
+}
+
+.search-box.loading {
+  border-color: var(--primary);
+  animation: searchPulse 2s ease-in-out infinite;
+}
+
+@keyframes searchPulse {
+  0%, 100% { box-shadow: 0 8px 32px rgba(99, 102, 241, 0.25); }
+  50% { box-shadow: 0 8px 40px rgba(99, 102, 241, 0.4); }
+}
+
+/* 搜索图标 */
+.search-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  transition: color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.search-box.focused .search-icon {
+  color: var(--primary);
+}
+
+.search-icon svg {
+  stroke: currentColor;
+}
+
+/* 搜索输入框 */
+.search-input {
   flex: 1;
-  border: 0;
+  border: none;
+  background: transparent;
   outline: none;
   font-size: 16px;
-  /* iOS Safari兼容性：防止输入框缩放 */
+  font-weight: 500;
+  color: var(--text-primary);
+  min-width: 0; /* 允许收缩 */
+
+  /* iOS Safari兼容性 */
   -webkit-appearance: none;
   -webkit-border-radius: 0;
   border-radius: 0;
-  /* iOS Safari兼容性：防止自动缩放 */
   -webkit-text-size-adjust: 100%;
-  /* iOS Safari兼容性：改善输入体验 */
   -webkit-tap-highlight-color: transparent;
 }
-.btn {
+
+.search-input::placeholder {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+/* 操作按钮区域 */
+.search-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 通用按钮样式 */
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 12px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  color: #111;
-  border-radius: 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
-  /* iOS Safari兼容性：防止按钮缩放 */
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+
+  /* iOS Safari兼容性 */
   -webkit-appearance: none;
   -webkit-tap-highlight-color: transparent;
-  /* iOS Safari兼容性：改善触摸体验 */
   -webkit-user-select: none;
   user-select: none;
-  /* iOS Safari兼容性：防止按钮被缩放 */
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
 }
-.btn:hover {
-  background: #f6f7f9;
-}
-.btn:active {
-  /* iOS Safari兼容性：触摸反馈 */
-  background: #e5e7eb;
-  transform: scale(0.98);
-}
-.btn[disabled] {
-  opacity: 0.6;
+
+.action-btn:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
 }
 
-.btn--primary {
-  background: #111;
-  color: #fff;
-  border-color: #111;
-}
-.btn--primary:hover {
-  background: #000;
-}
-.btn--primary:active {
-  background: #000;
-}
-.btn--ghost {
-  background: transparent;
+/* 主要按钮 - 渐变背景 */
+.action-btn.primary {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: white;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 
-/* 小屏优化：按钮换行、输入占满 */
+.action-btn.primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+}
+
+.action-btn.primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* 幽灵按钮 - 透明背景 */
+.action-btn.ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  padding: 8px;
+}
+
+.action-btn.ghost:hover {
+  background: var(--bg-secondary);
+  border-color: var(--border-medium);
+  color: var(--text-primary);
+}
+
+.action-btn.ghost:active {
+  background: var(--border-light);
+}
+
+/* 按钮图标 */
+.action-btn svg {
+  stroke: currentColor;
+  flex-shrink: 0;
+}
+
+.btn-text {
+  display: inline-block;
+}
+
+/* 加载动画 */
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(99, 102, 241, 0.2);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 移动端优化 */
 @media (max-width: 640px) {
-  .search__box {
-    flex-wrap: wrap;
-    gap: 6px;
+  .search-box {
+    padding: 10px 12px;
+    gap: 8px;
   }
-  .search__icon {
-    display: none;
+
+  .search-icon {
+    display: none; /* 在移动端隐藏图标，节省空间 */
   }
-  .search__box input {
-    width: 100%;
+
+  .search-input {
     font-size: 15px;
-    /* iOS Safari兼容性：确保输入框在小屏幕上正常工作 */
-    -webkit-appearance: none;
-    -webkit-border-radius: 0;
   }
-  .btn {
+
+  .action-btn {
     padding: 8px 10px;
-    font-size: 14px;
-    /* iOS Safari兼容性：确保按钮在小屏幕上正常工作 */
-    min-height: 44px;
-    min-width: 44px;
+    font-size: 13px;
+  }
+
+  .action-btn.primary .btn-text {
+    display: none; /* 在小屏幕上只显示图标 */
+  }
+
+  .action-btn.ghost {
+    padding: 6px;
+  }
+
+  .loading-spinner {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/* 超小屏幕优化 */
+@media (max-width: 360px) {
+  .search-box {
+    padding: 8px 10px;
+  }
+
+  .action-btn {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+}
+
+/* 深色模式支持 */
+@media (prefers-color-scheme: dark) {
+  .search-box {
+    background: rgba(15, 23, 42, 0.7);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .search-box.focused {
+    border-color: var(--primary);
+  }
+
+  .search-input {
+    color: var(--text-primary);
+  }
+
+  .search-input::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  .action-btn.ghost {
+    background: rgba(30, 41, 59, 0.5);
+    border-color: rgba(100, 116, 139, 0.3);
+    color: var(--text-secondary);
+  }
+
+  .action-btn.ghost:hover {
+    background: rgba(15, 23, 42, 0.7);
+    border-color: rgba(100, 116, 139, 0.5);
+    color: var(--text-primary);
+  }
+
+  .action-btn.ghost:active {
+    background: rgba(51, 65, 85, 0.5);
+  }
+
+  .loading-spinner {
+    border-color: rgba(99, 102, 241, 0.2);
+    border-top-color: var(--primary);
+  }
+}
+
+/* 高对比度模式支持 */
+@media (prefers-contrast: high) {
+  .search-box {
+    border-width: 3px;
+  }
+
+  .action-btn.primary {
+    border: 2px solid white;
+  }
+
+  .action-btn.ghost {
+    border-width: 2px;
+  }
+}
+
+/* 减少动画模式支持 */
+@media (prefers-reduced-motion: reduce) {
+  .search-box,
+  .action-btn {
+    transition: none;
+  }
+
+  .search-box.loading {
+    animation: none;
+  }
+
+  .loading-spinner {
+    animation: none;
+    opacity: 0.7;
+  }
+
+  .action-btn.primary:hover:not(:disabled),
+  .action-btn.primary:active:not(:disabled) {
+    transform: none;
   }
 }
 
 /* iOS Safari特定优化 */
 @supports (-webkit-touch-callout: none) {
-  .search__box input {
-    /* iOS Safari兼容性：防止输入框出现默认样式 */
+  .search-box {
+    /* iOS Safari兼容性：防止缩放 */
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .search-input {
+    /* iOS Safari兼容性：确保输入框正常工作 */
     -webkit-appearance: none;
     -webkit-border-radius: 0;
     border-radius: 0;
   }
 
-  .btn {
-    /* iOS Safari兼容性：确保按钮有足够的触摸区域 */
+  .action-btn {
+    /* iOS Safari兼容性：确保触摸区域足够大 */
     min-height: 44px;
     min-width: 44px;
-    /* iOS Safari兼容性：防止按钮出现默认样式 */
     -webkit-appearance: none;
-    -webkit-border-radius: 10px;
   }
 }
 </style>
